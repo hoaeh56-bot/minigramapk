@@ -1,0 +1,70 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # нужно, чтобы выкладывать APK в Releases
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # Необязательно: подпись вашим ключом (см. README). Без ключа APK подписывается
+      # отладочным ключом: он устанавливается, но обновить поверх старой версии нельзя.
+      - name: Подпись (если заданы секреты)
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KS_KEYPASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$GITHUB_WORKSPACE/release.jks"
+            {
+              echo "storeFile=release.jks"
+              echo "storePassword=$KS_PASS"
+              echo "keyAlias=$KS_ALIAS"
+              echo "keyPassword=${KS_KEYPASS:-$KS_PASS}"
+            } > "$GITHUB_WORKSPACE/keystore.properties"
+            echo "Подпись: ваш ключ"
+          else
+            echo "Подпись: отладочный ключ (секреты не заданы)"
+          fi
+
+      - name: Сборка
+        env:
+          SERVER_URL: ${{ vars.SERVER_URL }}
+        run: |
+          gradle assembleRelease --no-daemon --stacktrace \
+            -PSERVER_URL="$SERVER_URL" \
+            -PVERSION_CODE="${{ github.run_number }}" \
+            -PVERSION_NAME="1.0.${{ github.run_number }}"
+          mv app/build/outputs/apk/release/*.apk MiniGram.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MiniGram-apk
+          path: MiniGram.apk
+
+      - name: Выложить в Releases (при теге v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MiniGram.apk

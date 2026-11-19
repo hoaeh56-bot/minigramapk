@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application'
+}
+
+def serverUrl   = (project.findProperty('SERVER_URL') ?: '').toString().trim()
+def verName     = (project.findProperty('VERSION_NAME') ?: '1.0.0').toString()
+def verCode     = (project.findProperty('VERSION_CODE') ?: '1').toString().toInteger()
+
+// Подпись релиза: если рядом лежит keystore.properties, подписываем вашим ключом,
+// иначе используется отладочный ключ (APK всё равно устанавливается).
+def ksFile = rootProject.file('keystore.properties')
+def ks = new Properties()
+if (ksFile.exists()) { ksFile.withInputStream { ks.load(it) } }
+
+android {
+    namespace 'ru.minigram.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'ru.minigram.app'
+        minSdk 24
+        targetSdk 34
+        versionCode verCode
+        versionName verName
+        buildConfigField 'String', 'SERVER_URL', '"' + serverUrl.replace('"', '') + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            if (ksFile.exists()) {
+                storeFile rootProject.file(ks['storeFile'])
+                storePassword ks['storePassword']
+                keyAlias ks['keyAlias']
+                keyPassword ks['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig ksFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}
